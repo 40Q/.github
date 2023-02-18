@@ -9,7 +9,7 @@ on:
         required: true
       TRELLIS_DEPLOY_SSH_KNOWN_HOSTS:
         required: true
-      TRELLIS_ANSIBLE_VAULT_PASSWORD:
+      ANSIBLE_VAULT_PASSWORD:
         required: true
 
 env:
