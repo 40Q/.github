@@ -2,15 +2,6 @@ name: Deploy site
 
 on:
   workflow_call:
-    secrets: 
-      TRELLIS_REPOSITORY_PERSONAL_ACCESS_TOKEN: 
-        required: true
-      TRELLIS_DEPLOY_SSH_PRIVATE_KEY:
-        required: true
-      TRELLIS_DEPLOY_SSH_KNOWN_HOSTS:
-        required: true
-      ANSIBLE_VAULT_PASSWORD:
-        required: true
 
 env:
   ENVIRONMENT: ${{ ( github.ref_name == 'master' || github.ref_name == 'main' ) && 'production' || 'staging' }}
@@ -20,6 +11,9 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+    - name: Test Environment
+      run: echo "Today is $ENVIRONMENT!"
+
     - uses: actions/checkout@v2
       with:
         path: site
@@ -51,11 +45,8 @@ jobs:
         repo-token: ${{ secrets.GITHUB_TOKEN }}
         ansible-vault-password: ${{ secrets.ANSIBLE_VAULT_PASSWORD }}
     
+    - uses: hmarr/debug-action@v2
+    
     - name: Deploy
       run: trellis deploy ${{ env.ENVIRONMENT }} ${{ vars.DOMAIN }}
       working-directory: trellis
-
-    # - uses: hmarr/debug-action@v2
-
-    # - name: Test Environment
-    #   run: echo "Today is $ENVIRONMENT!"
