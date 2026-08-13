@@ -2,51 +2,78 @@ name: Deploy site
 
 on:
   workflow_call:
+    inputs:
+      site:
+        description: Trellis site key to deploy
+        required: true
+        type: string
+    secrets:
+      ANSIBLE_VAULT_PASSWORD:
+        required: true
+      TRELLIS_DEPLOY_SSH_KNOWN_HOSTS:
+        required: true
+      TRELLIS_DEPLOY_SSH_PRIVATE_KEY:
+        required: true
+      TRELLIS_REPOSITORY_PERSONAL_ACCESS_TOKEN:
+        required: true
 
-env:
-  ENVIRONMENT: ${{ ( github.ref_name == 'master' || github.ref_name == 'main' ) && 'production' || 'staging' }}
-  
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-${{ github.repository }}-${{ inputs.site }}-${{ github.ref_name }}
+  cancel-in-progress: false
+
 jobs:
   deploy:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
+    environment: ${{ (github.ref_name == 'master' || github.ref_name == 'main') && 'production' || 'staging' }}
 
     steps:
-    - name: Test Environment
-      run: echo "Today is $ENVIRONMENT!"
+      - name: Check out site
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          path: ${{ github.event.repository.name }}
 
-    - uses: actions/checkout@v2
-      with:
-        path: site
-    
-    - uses: actions/setup-node@v2
-      with:
-        node-version: 14
-    
-    - name: Install Bower
-      run: npm install -g bower
-    
-    - uses: actions/checkout@v2
-      with:
-        repository: 40Q/trellis-vps-02
-        path: trellis
-        token: ${{ secrets.TRELLIS_REPOSITORY_PERSONAL_ACCESS_TOKEN }}
-    
-    - uses: shimataro/ssh-key-action@v2
-      with:
-        key: ${{ secrets.TRELLIS_DEPLOY_SSH_PRIVATE_KEY }}
-        known_hosts: ${{ secrets.TRELLIS_DEPLOY_SSH_KNOWN_HOSTS }}
-    
-    - uses: webfactory/ssh-agent@v0.5.4
-      with:
-        ssh-private-key: ${{ secrets.TRELLIS_DEPLOY_SSH_PRIVATE_KEY }}
-    
-    - uses: roots/setup-trellis-cli@v1
-      with:
-        repo-token: ${{ secrets.GITHUB_TOKEN }}
-        ansible-vault-password: ${{ secrets.ANSIBLE_VAULT_PASSWORD }}
-    
-    - uses: hmarr/debug-action@v2
-    
-    - name: Deploy
-      run: trellis deploy ${{ env.ENVIRONMENT }} ${{ vars.DOMAIN }}
-      working-directory: trellis
+      - name: Set up legacy Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 10.24.1
+
+      - name: Install Bower
+        run: npm install --global bower@1.8.14
+
+      - name: Check out Trellis
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          repository: 40Q/trellis-vps-02
+          ref: master
+          path: trellis
+          token: ${{ secrets.TRELLIS_REPOSITORY_PERSONAL_ACCESS_TOKEN }}
+
+      - name: Start SSH agent
+        uses: webfactory/ssh-agent@a6f90b1f127823b31d4d4a8d96047790581349bd # v0.9.1
+        with:
+          ssh-private-key: ${{ secrets.TRELLIS_DEPLOY_SSH_PRIVATE_KEY }}
+
+      - name: Configure trusted SSH hosts
+        env:
+          SSH_KNOWN_HOSTS: ${{ secrets.TRELLIS_DEPLOY_SSH_KNOWN_HOSTS }}
+        run: |
+          install -d -m 700 ~/.ssh
+          printf '%s\n' "$SSH_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/known_hosts
+
+      - name: Set up Trellis CLI
+        uses: roots/setup-trellis-cli@aca8a0213f85ccee09f8f42597391934a03430e9 # v1
+        with:
+          ansible-vault-password: ${{ secrets.ANSIBLE_VAULT_PASSWORD }}
+          repo-token: ${{ github.token }}
+          trellis-directory: trellis
+
+      - name: Deploy
+        env:
+          TRELLIS_ENVIRONMENT: ${{ (github.ref_name == 'master' || github.ref_name == 'main') && 'production' || 'staging' }}
+          TRELLIS_SITE: ${{ inputs.site }}
+        run: trellis deploy "$TRELLIS_ENVIRONMENT" "$TRELLIS_SITE"
+        working-directory: trellis
